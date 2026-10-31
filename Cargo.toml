@@ -1,0 +1,12 @@
+[package]
+name = "tether"
+version = "0.0.1"
+edition = "2024"
+description = "Your laptop and phone, tethered to the box your code runs on"
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+
+[profile.release]
+strip = true
