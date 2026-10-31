@@ -35,9 +35,16 @@ pub enum Command {
         host: Option<String>,
     },
     /// Carry requests from the server to the connected laptop (started by connect)
-    Relay,
+    Relay {
+        /// The laptop's name, shown by status
+        #[arg(long, default_value = "laptop")]
+        from: String,
+    },
     /// Open a URL in the connected laptop's browser
-    Open,
+    Open {
+        /// An http or https URL, such as http://localhost:5173
+        url: String,
+    },
     /// Show a desktop notification on the connected laptop
     Notify,
     /// Show whether a laptop is connected, from where and since when
@@ -55,8 +62,8 @@ impl Command {
             Command::Shares => "shares",
             Command::Origin { .. } => "origin",
             Command::Connect { .. } => "connect",
-            Command::Relay => "relay",
-            Command::Open => "open",
+            Command::Relay { .. } => "relay",
+            Command::Open { .. } => "open",
             Command::Notify => "notify",
             Command::Status => "status",
             Command::Browser => "browser",
@@ -85,6 +92,7 @@ mod tests {
     fn args(name: &str) -> Vec<&str> {
         match name {
             "share" | "unshare" | "origin" => vec!["tether", name, "5173"],
+            "open" => vec!["tether", name, "http://localhost:5173"],
             _ => vec!["tether", name],
         }
     }

@@ -32,6 +32,19 @@ Each setting comes from the command line, then the environment, then `~/.config/
 | SSH host of the server | `TETHER_HOST` | `host` | `server` |
 | Local SOCKS port | `TETHER_PORT` | `port` | `1080` |
 
+## Open tabs on the laptop from the server
+
+While a laptop is connected, on the server:
+
+```sh
+tether open http://localhost:5173   # opens a tab on the laptop; exits 1 with a reason if it cannot
+tether status                       # connected: <laptop>, for 2h 5m; exits 1 if no laptop is connected
+```
+
+`open` takes only http and https URLs and waits up to 2 seconds for the laptop to confirm, so it works as `BROWSER="tether open"` and a caller can fall back when it exits 1 with `tether: no browser connected`.
+`connect` runs `tether relay` on the server over the same SSH connection, so the server needs tether installed too; without it, `connect` keeps the proxy and says so.
+When several laptops connect, the most recent gets the tabs, and the one before takes over again when it leaves.
+
 ## Share a port with your phone
 
 On the server, with a dev server on port 5173:

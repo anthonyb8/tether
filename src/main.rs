@@ -1,6 +1,9 @@
 mod cli;
 mod config;
 mod connect;
+mod laptop;
+mod protocol;
+mod relay;
 mod share;
 mod tailscale;
 
@@ -21,6 +24,9 @@ fn main() -> ExitCode {
         Command::Shares => share::shares(),
         Command::Origin { port } => share::origin(port),
         Command::Connect { host } => connect::connect(host),
+        Command::Relay { from } => relay::relay(from),
+        Command::Open { url } => relay::open(url),
+        Command::Status => relay::status(),
         command => {
             eprintln!("tether: {} is not built yet", command.name());
             return ExitCode::from(NOT_BUILT);
