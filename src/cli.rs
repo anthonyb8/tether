@@ -50,7 +50,10 @@ pub enum Command {
     /// Show whether a laptop is connected, from where and since when
     Status,
     /// Open a browser on the laptop whose localhost is the server's
-    Browser,
+    Browser {
+        /// The server's SSH host (default: TETHER_HOST, the config file, else "server")
+        host: Option<String>,
+    },
 }
 
 impl Command {
@@ -66,7 +69,7 @@ impl Command {
             Command::Open { .. } => "open",
             Command::Notify => "notify",
             Command::Status => "status",
-            Command::Browser => "browser",
+            Command::Browser { .. } => "browser",
         }
     }
 }

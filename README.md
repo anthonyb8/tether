@@ -25,12 +25,23 @@ tether connect [host]
 It holds one SSH connection to the server carrying a SOCKS proxy on `127.0.0.1:1080`, in which `localhost` is the server's, and reconnects on its own after sleep or a dropped network, waiting 1 s and doubling to 30 s between tries.
 It uses the system `ssh`, so the host is anything your `~/.ssh/config` knows, and needs key or agent authentication since it never prompts.
 
+For a browser where `localhost` is the server's:
+
+```sh
+tether browser [host]
+```
+
+It starts `tether connect` in the background if it is not already running, logging to `~/.cache/tether/connect.log`, and opens a Chromium-family browser (Chromium, Chrome, Brave or Edge) with its own profile in `~/.config/tether/chromium`.
+In that profile every request goes through the proxy, `localhost` included, so every dev server, an API the page calls on `127.0.0.1` and OAuth callbacks to `localhost` work unchanged; the rest of the browser is untouched.
+`tether open` on the server opens its URL as a new tab in that profile.
+
 Each setting comes from the command line, then the environment, then `~/.config/tether/config.toml`, then the default:
 
 | Setting | Env | Config key | Default |
 |---|---|---|---|
 | SSH host of the server | `TETHER_HOST` | `host` | `server` |
 | Local SOCKS port | `TETHER_PORT` | `port` | `1080` |
+| Browser, a command or path | | `browser` | the first Chromium-family browser found |
 
 ## Open tabs on the laptop from the server
 

@@ -88,7 +88,7 @@ fn run_with_relay(settings: &Settings, me: &str) -> Result<std::process::ExitSta
         let Ok(envelope) = serde_json::from_str::<Envelope>(&line) else {
             continue;
         };
-        let mut ack = laptop::handle(envelope.request);
+        let mut ack = laptop::handle(envelope.request, settings);
         ack.id = Some(envelope.id);
         let sent = writeln!(to_server, "{}", serde_json::to_string(&ack)?)
             .and_then(|()| to_server.flush());
@@ -122,6 +122,12 @@ fn ssh(settings: &Settings, remote: Option<&str>) -> Command {
         cmd.arg(remote);
     }
     cmd
+}
+
+/// Whether something accepts connections on the proxy port, which on the
+/// laptop means a `tether connect` is up.
+pub fn proxy_up(port: u16) -> bool {
+    std::net::TcpStream::connect(("127.0.0.1", port)).is_ok()
 }
 
 /// Refuses a proxy port something else holds, most often another `tether

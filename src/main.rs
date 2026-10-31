@@ -1,3 +1,4 @@
+mod browser;
 mod cli;
 mod config;
 mod connect;
@@ -5,6 +6,7 @@ mod laptop;
 mod protocol;
 mod relay;
 mod share;
+mod spawn;
 mod tailscale;
 
 use std::process::ExitCode;
@@ -27,6 +29,7 @@ fn main() -> ExitCode {
         Command::Relay { from } => relay::relay(from),
         Command::Open { url } => relay::open(url),
         Command::Status => relay::status(),
+        Command::Browser { host } => browser::browser(host),
         command => {
             eprintln!("tether: {} is not built yet", command.name());
             return ExitCode::from(NOT_BUILT);

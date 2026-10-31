@@ -1,13 +1,16 @@
 //! What the laptop does with each request the server sends it.
 
-use std::process::{Command, Stdio};
-
+use crate::browser;
+use crate::config::Settings;
 use crate::protocol::{Ack, Request, check_url};
 
-pub fn handle(request: Request) -> Ack {
+pub fn handle(request: Request, settings: &Settings) -> Ack {
     match request {
         Request::Open { url } => match check_url(&url) {
-            Ok(()) => open(&url),
+            Ok(()) => match browser::launch(settings, Some(&url)) {
+                Ok(()) => Ack::ok(),
+                Err(err) => Ack::error(format!("{err:#}")),
+            },
             Err(reason) => Ack::error(reason),
         },
         // A newer server asking an older laptop for something it cannot do.
@@ -15,29 +18,6 @@ pub fn handle(request: Request) -> Ack {
             Ack::error("this laptop's tether cannot show notifications; update it")
         }
         Request::Status => Ack::error("status is answered by the relay"),
-    }
-}
-
-/// Opens a URL with the desktop's opener. The opener is not waited on: some
-/// stay in the foreground until the browser they started exits.
-fn open(url: &str) -> Ack {
-    let opener = if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    };
-    match Command::new(opener)
-        .arg(url)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-    {
-        Ok(mut child) => {
-            std::thread::spawn(move || child.wait());
-            Ack::ok()
-        }
-        Err(err) => Ack::error(format!("could not run {opener}: {err}")),
     }
 }
 
