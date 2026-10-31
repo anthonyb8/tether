@@ -49,9 +49,11 @@ While a laptop is connected, on the server:
 
 ```sh
 tether open http://localhost:5173   # opens a tab on the laptop; exits 1 with a reason if it cannot
+tether notify "tests passed"         # a desktop notification on the laptop, same exit codes as open
 tether status                       # connected: <laptop>, for 2h 5m; exits 1 if no laptop is connected
 ```
 
+Notifications use `notify-send` on Linux (from libnotify) and `osascript` on macOS.
 `open` takes only http and https URLs and waits up to 2 seconds for the laptop to confirm, so it works as `BROWSER="tether open"` and a caller can fall back when it exits 1 with `tether: no browser connected`.
 `connect` runs `tether relay` on the server over the same SSH connection, so the server needs tether installed too; without it, `connect` keeps the proxy and says so.
 When several laptops connect, the most recent gets the tabs, and the one before takes over again when it leaves.

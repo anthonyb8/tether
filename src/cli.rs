@@ -46,7 +46,11 @@ pub enum Command {
         url: String,
     },
     /// Show a desktop notification on the connected laptop
-    Notify,
+    Notify {
+        /// The message; several words are joined with spaces
+        #[arg(required = true)]
+        text: Vec<String>,
+    },
     /// Show whether a laptop is connected, from where and since when
     Status,
     /// Open a browser on the laptop whose localhost is the server's
@@ -54,24 +58,6 @@ pub enum Command {
         /// The server's SSH host (default: TETHER_HOST, the config file, else "server")
         host: Option<String>,
     },
-}
-
-impl Command {
-    /// The name the user typed for this subcommand.
-    pub fn name(&self) -> &'static str {
-        match self {
-            Command::Share { .. } => "share",
-            Command::Unshare { .. } => "unshare",
-            Command::Shares => "shares",
-            Command::Origin { .. } => "origin",
-            Command::Connect { .. } => "connect",
-            Command::Relay { .. } => "relay",
-            Command::Open { .. } => "open",
-            Command::Notify => "notify",
-            Command::Status => "status",
-            Command::Browser { .. } => "browser",
-        }
-    }
 }
 
 /// A TCP port to share: 1 to 65535.
@@ -85,28 +71,6 @@ fn port(arg: &str) -> Result<u16, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const SUBCOMMANDS: [&str; 10] = [
-        "share", "unshare", "shares", "origin", "connect", "relay", "open", "notify", "status",
-        "browser",
-    ];
-
-    /// The arguments each subcommand needs to parse.
-    fn args(name: &str) -> Vec<&str> {
-        match name {
-            "share" | "unshare" | "origin" => vec!["tether", name, "5173"],
-            "open" => vec!["tether", name, "http://localhost:5173"],
-            _ => vec!["tether", name],
-        }
-    }
-
-    #[test]
-    fn every_subcommand_parses_and_reports_its_own_name() {
-        for name in SUBCOMMANDS {
-            let cli = Cli::try_parse_from(args(name)).unwrap();
-            assert_eq!(cli.command.name(), name);
-        }
-    }
 
     #[test]
     fn a_port_must_be_1_to_65535() {

@@ -247,3 +247,39 @@ exec python3 -c "import socket,time; s=socket.socket(); s.bind(('127.0.0.1', $po
     }
     assert!(!sandbox.calls("chromium").is_empty(), "browser not opened");
 }
+
+#[test]
+fn connect_shows_the_servers_notification_and_acks_it() {
+    let sandbox = Sandbox::new("connect-notify");
+    let acks = sandbox.dir.join("acks");
+    sandbox.fake(
+        "ssh",
+        &format!(
+            r#"echo '{{"id":9,"type":"notify","text":"tests passed \"quoted\""}}'
+read ack; echo "$ack" >> '{}'
+exit 255"#,
+            acks.display()
+        ),
+    );
+    sandbox.fake("notify-send", "");
+    sandbox.fake("osascript", "");
+    let mut child = sandbox
+        .tether(&["connect"])
+        .env("TETHER_PORT", free_port().to_string())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !acks.exists() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(50));
+    }
+    child.kill().unwrap();
+    child.wait().unwrap();
+
+    let shown = if cfg!(target_os = "macos") {
+        sandbox.calls("osascript")
+    } else {
+        sandbox.calls("notify-send")
+    };
+    assert!(shown.ends_with("tests passed \"quoted\"\n"), "{shown}");
+    assert_eq!(std::fs::read_to_string(&acks).unwrap(), "{\"id\":9}\n");
+}

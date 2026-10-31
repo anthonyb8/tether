@@ -166,3 +166,21 @@ fn the_newest_laptop_gets_the_tabs_and_the_older_one_takes_over_when_it_leaves()
     older.disconnect();
     wait_for(|| run(&sandbox, &["status"]).status.code() == Some(1));
 }
+
+#[test]
+fn notify_sends_its_words_as_one_message() {
+    let sandbox = sandbox("relay-notify");
+    let mut laptop = Laptop::connect(&sandbox, "mac");
+    let notify = {
+        let mut cmd = sandbox.tether(&["notify", "build", "finished:", "ok"]);
+        cmd.env("XDG_RUNTIME_DIR", sandbox.dir.join("run"));
+        thread::spawn(move || cmd.output().unwrap())
+    };
+    let request = laptop.next_request();
+    assert_eq!(request["type"], "notify");
+    assert_eq!(request["text"], "build finished: ok");
+    laptop.ack(serde_json::json!({ "id": request["id"] }));
+    let out = notify.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    laptop.disconnect();
+}

@@ -232,6 +232,10 @@ pub fn open(url: String) -> Result<()> {
     send(Request::Open { url })
 }
 
+pub fn notify(text: String) -> Result<()> {
+    send(Request::Notify { text })
+}
+
 pub fn status() -> Result<()> {
     let Some(ack) = ask(&Request::Status)? else {
         bail!("no laptop connected");
