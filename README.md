@@ -11,6 +11,7 @@ curl -fsSL https://raw.githubusercontent.com/anthonyb8/tether/main/install.sh | 
 ```
 
 It installs the latest release to `~/.local/bin` when that is on PATH, else `/usr/local/bin`, after checking the download against its published SHA-256.
+On Linux it also adds `tether browser` to your app launcher (rofi, GNOME, KDE and the like), through `~/.local/share/applications/tether-browser.desktop`.
 Set `TETHER_VERSION=v0.0.1` before `sh` to install a specific release.
 From source: `cargo install --git https://github.com/anthonyb8/tether`.
 

@@ -1,7 +1,8 @@
 #!/bin/sh
 # Runs install.sh the way a user does, against a fake release served by a
-# stand-in for curl, and checks it installs a working tether to ~/.local/bin
-# and refuses a download whose checksum does not match.
+# stand-in for curl, and checks it installs a working tether to ~/.local/bin,
+# adds tether browser to the app launcher on Linux, and refuses a download
+# whose checksum does not match.
 #   tests/install.sh path/to/tether
 set -eu
 
@@ -47,6 +48,17 @@ run_install > "$WORK/out" 2>&1 || { cat "$WORK/out" >&2; fail "install exited no
 [ -x "$WORK/home/.local/bin/tether" ] || fail "tether not installed to ~/.local/bin"
 "$WORK/home/.local/bin/tether" --help | grep -q "share" || fail "installed tether does not print its help"
 echo "ok - installs to ~/.local/bin"
+
+# On Linux, tether browser is in the app launcher, by the installed binary's full path.
+if [ "$OS" = linux ]; then
+  DESKTOP="$WORK/home/.local/share/applications/tether-browser.desktop"
+  [ -f "$DESKTOP" ] || fail "no launcher entry at $DESKTOP"
+  grep -qx "Exec=\"$WORK/home/.local/bin/tether\" browser" "$DESKTOP" || { cat "$DESKTOP" >&2; fail "launcher entry does not run the installed tether browser"; }
+  if command -v desktop-file-validate >/dev/null; then
+    desktop-file-validate "$DESKTOP" || fail "launcher entry is not a valid desktop file"
+  fi
+  echo "ok - adds tether browser to the app launcher"
+fi
 
 # A tampered download is refused and installs nothing.
 rm "$WORK/home/.local/bin/tether"

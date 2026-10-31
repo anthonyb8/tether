@@ -72,3 +72,28 @@ else
 fi
 
 echo "tether ${VERSION} installed to ${INSTALL_DIR}/tether"
+
+# On Linux, a launcher entry for tether browser, so app launchers such as
+# rofi, GNOME and KDE find it. It names the binary by its full path, since a
+# launcher started at login may not have INSTALL_DIR on its PATH. Rewritten on
+# every install, so it follows the binary if it moves.
+if [ "$OS" = "linux" ]; then
+  APPS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+  mkdir -p "$APPS_DIR"
+  cat > "${APPS_DIR}/tether-browser.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=tether browser
+GenericName=Web Browser
+Comment=A browser whose localhost is the server's
+Exec="${INSTALL_DIR}/tether" browser
+Icon=web-browser
+Terminal=false
+Categories=Network;WebBrowser;Development;
+Keywords=tether;proxy;localhost;server;
+DESKTOP
+  if command -v update-desktop-database >/dev/null; then
+    update-desktop-database "$APPS_DIR" >/dev/null 2>&1 || true
+  fi
+  echo "Added tether browser to your app launcher"
+fi
