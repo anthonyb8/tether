@@ -5,7 +5,8 @@
 mod common;
 
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, ChildStdout, Stdio};
+use std::process::{Child, ChildStdin, Stdio};
+use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -14,7 +15,9 @@ use common::{Sandbox, stderr, stdout};
 struct Laptop {
     relay: Child,
     to_relay: ChildStdin,
-    from_relay: BufReader<ChildStdout>,
+    /// Each line the relay forwards, read on a thread so a request that never
+    /// arrives fails the test rather than hanging it.
+    from_relay: Receiver<String>,
 }
 
 impl Laptop {
@@ -26,9 +29,16 @@ impl Laptop {
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
+        let (lines, from_relay) = mpsc::channel();
+        let stdout = BufReader::new(relay.stdout.take().unwrap());
+        thread::spawn(move || {
+            for line in stdout.lines().map_while(Result::ok) {
+                let _ = lines.send(line);
+            }
+        });
         let laptop = Laptop {
             to_relay: relay.stdin.take().unwrap(),
-            from_relay: BufReader::new(relay.stdout.take().unwrap()),
+            from_relay,
             relay,
         };
         wait_for(|| status(sandbox).contains(name));
@@ -37,9 +47,15 @@ impl Laptop {
 
     /// Reads the next request the relay forwards, as the laptop would.
     fn next_request(&mut self) -> serde_json::Value {
-        let mut line = String::new();
-        self.from_relay.read_line(&mut line).unwrap();
+        let line = self
+            .from_relay
+            .recv_timeout(Duration::from_secs(5))
+            .expect("no request reached this laptop");
         serde_json::from_str(&line).unwrap()
+    }
+
+    fn has_no_request(&self) -> bool {
+        self.from_relay.try_recv().is_err()
     }
 
     fn ack(&mut self, ack: serde_json::Value) {
@@ -157,14 +173,31 @@ fn open_refuses_anything_but_a_web_url_before_reaching_the_laptop() {
 #[test]
 fn the_newest_laptop_gets_the_tabs_and_the_older_one_takes_over_when_it_leaves() {
     let sandbox = sandbox("relay-replace");
-    let older = Laptop::connect(&sandbox, "linux-laptop");
-    let newer = Laptop::connect(&sandbox, "mac");
+    let mut older = Laptop::connect(&sandbox, "linux-laptop");
+    let mut newer = Laptop::connect(&sandbox, "mac");
     assert!(status(&sandbox).starts_with("connected: mac,"));
+    open_on(&sandbox, &mut newer, "http://localhost:5173/");
+    assert!(older.has_no_request(), "the older laptop got the tab too");
 
     newer.disconnect();
     wait_for(|| status(&sandbox).starts_with("connected: linux-laptop,"));
+    open_on(&sandbox, &mut older, "http://localhost:3000/");
     older.disconnect();
     wait_for(|| run(&sandbox, &["status"]).status.code() == Some(1));
+}
+
+/// Runs `open` on the server and checks `laptop` is the one it reached.
+fn open_on(sandbox: &Sandbox, laptop: &mut Laptop, url: &str) {
+    let open = {
+        let mut cmd = sandbox.tether(&["open", url]);
+        cmd.env("XDG_RUNTIME_DIR", sandbox.dir.join("run"));
+        thread::spawn(move || cmd.output().unwrap())
+    };
+    let request = laptop.next_request();
+    assert_eq!(request["url"], url);
+    laptop.ack(serde_json::json!({ "id": request["id"] }));
+    let out = open.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
 }
 
 #[test]

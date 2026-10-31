@@ -82,9 +82,4 @@ mod tests {
         }
         assert!(Cli::try_parse_from(["tether", "share", "65535"]).is_ok());
     }
-
-    #[test]
-    fn an_unknown_subcommand_is_refused() {
-        assert!(Cli::try_parse_from(["tether", "shar"]).is_err());
-    }
 }

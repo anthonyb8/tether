@@ -190,6 +190,13 @@ fn browser_opens_the_profile_through_a_running_connect() {
         .unwrap();
 
     assert!(out.status.success(), "{}", stderr(&out));
+    // Not that ssh went unrun: a second connect would stop at the busy port
+    // before running it, so only browser's own report tells.
+    assert!(
+        !stderr(&out).contains("started tether connect"),
+        "started a second connect: {}",
+        stderr(&out)
+    );
     let deadline = Instant::now() + Duration::from_secs(5);
     while sandbox.calls("chromium").is_empty() && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(50));
@@ -199,7 +206,6 @@ fn browser_opens_the_profile_through_a_running_connect() {
         launched.contains(&format!("--proxy-server=socks5://127.0.0.1:{port}")),
         "{launched}"
     );
-    assert_eq!(sandbox.calls("ssh"), "", "started a second connect");
 }
 
 #[test]

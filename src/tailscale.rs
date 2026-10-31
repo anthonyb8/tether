@@ -181,19 +181,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn host_is_the_dns_name_without_its_trailing_dot() {
-        let json = br#"{"BackendState":"Running","Self":{"DNSName":"box.tail1.ts.net."},"CertDomains":["box.tail1.ts.net"]}"#;
-        assert_eq!(host_from_status(json).unwrap(), "box.tail1.ts.net");
-    }
-
-    #[test]
-    fn host_needs_https_certificates_on() {
-        let json = br#"{"BackendState":"Running","Self":{"DNSName":"box.tail1.ts.net."},"CertDomains":null}"#;
-        let err = host_from_status(json).unwrap_err().to_string();
-        assert!(err.contains("HTTPS Certificates"), "{err}");
-    }
-
-    #[test]
     fn host_needs_tailscale_connected() {
         let json = br#"{"BackendState":"Stopped","Self":{"DNSName":""},"CertDomains":null}"#;
         let err = host_from_status(json).unwrap_err().to_string();

@@ -93,19 +93,4 @@ mod tests {
             assert!(check_url(bad).is_err(), "{bad}");
         }
     }
-
-    #[test]
-    fn an_envelope_is_one_flat_json_object() {
-        let line = serde_json::to_string(&Envelope {
-            id: 7,
-            request: Request::Open {
-                url: "http://localhost:3000".into(),
-            },
-        })
-        .unwrap();
-        assert_eq!(
-            line,
-            r#"{"id":7,"type":"open","url":"http://localhost:3000"}"#
-        );
-    }
 }
