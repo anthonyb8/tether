@@ -283,3 +283,54 @@ exit 255"#,
     assert!(shown.ends_with("tests passed \"quoted\"\n"), "{shown}");
     assert_eq!(std::fs::read_to_string(&acks).unwrap(), "{\"id\":9}\n");
 }
+
+#[test]
+fn a_firefox_laptop_gets_a_proxied_profile_and_the_tab() {
+    let sandbox = Sandbox::new("connect-firefox");
+    let acks = sandbox.dir.join("acks");
+    sandbox.fake(
+        "ssh",
+        &format!(
+            r#"echo '{{"id":1,"type":"open","url":"http://localhost:3000/"}}'
+read ack; echo "$ack" >> '{}'
+exit 255"#,
+            acks.display()
+        ),
+    );
+    sandbox.fake("firefox", "");
+    std::fs::create_dir_all(sandbox.dir.join(".config/tether")).unwrap();
+    sandbox.write(".config/tether/config.toml", "browser = \"firefox\"\n");
+    let port = free_port();
+    let mut child = sandbox
+        .tether(&["connect"])
+        .env("TETHER_PORT", port.to_string())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !acks.exists() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(50));
+    }
+    child.kill().unwrap();
+    child.wait().unwrap();
+
+    let profile = sandbox.dir.join(".config/tether/firefox");
+    assert_eq!(
+        sandbox.calls("firefox"),
+        format!(
+            "--profile {} --new-tab http://localhost:3000/\n",
+            profile.display()
+        )
+    );
+    let prefs = std::fs::read_to_string(profile.join("user.js")).unwrap();
+    assert!(
+        prefs.contains(&format!(
+            r#"user_pref("network.proxy.socks_port", {port});"#
+        )),
+        "{prefs}"
+    );
+    assert!(
+        prefs.contains(r#"user_pref("network.proxy.allow_hijacking_localhost", true);"#),
+        "{prefs}"
+    );
+    assert_eq!(std::fs::read_to_string(&acks).unwrap(), "{\"id\":1}\n");
+}

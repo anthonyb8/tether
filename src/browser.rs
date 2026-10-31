@@ -1,6 +1,6 @@
-//! The laptop's tether browser: a Chromium-family browser with its own
-//! profile whose traffic, `localhost` included, goes through the SOCKS proxy
-//! to the server. The rest of the laptop's browsing is untouched.
+//! The laptop's tether browser: a Chromium-family browser or Firefox with its
+//! own profile whose traffic, `localhost` included, goes through the SOCKS
+//! proxy to the server. The rest of the laptop's browsing is untouched.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -29,15 +29,33 @@ const CHROMIUM_APPS: &[&str] = &[
     "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
 ];
 
+/// Firefox by command name, then as macOS installs it, used when no
+/// Chromium-family browser is.
+const FIREFOX: &[&str] = &[
+    "firefox",
+    "/Applications/Firefox.app/Contents/MacOS/firefox",
+];
+
 /// Opens the tether browser at `url`, or a new window without one. A profile
 /// that is already open takes the URL as a new tab.
 pub fn launch(settings: &Settings, url: Option<&str>) -> Result<()> {
     let browser = find(settings.browser.as_deref())?;
-    let profile = config::dir()?.join("chromium");
     let mut cmd = Command::new(&browser);
-    cmd.args(chromium_args(&profile, settings.port));
-    if let Some(url) = url {
-        cmd.arg(url);
+    if is_firefox(&browser) {
+        let profile = config::dir()?.join("firefox");
+        firefox_profile(&profile, settings.port)?;
+        cmd.arg("--profile").arg(&profile);
+        if let Some(url) = url {
+            cmd.args(["--new-tab", url]);
+        }
+    } else {
+        cmd.args(chromium_args(
+            &config::dir()?.join("chromium"),
+            settings.port,
+        ));
+        if let Some(url) = url {
+            cmd.arg(url);
+        }
     }
     detached(&mut cmd)
         .stdin(Stdio::null())
@@ -62,7 +80,37 @@ fn chromium_args(profile: &Path, port: u16) -> Vec<String> {
     ]
 }
 
-/// The configured browser, else the first Chromium-family one installed.
+fn is_firefox(browser: &Path) -> bool {
+    browser
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().to_lowercase().contains("firefox"))
+}
+
+/// Writes the profile's `user.js`, which Firefox applies at every start, so a
+/// changed port takes effect without touching the profile by hand.
+fn firefox_profile(profile: &Path, port: u16) -> Result<()> {
+    std::fs::create_dir_all(profile)
+        .with_context(|| format!("could not create {}", profile.display()))?;
+    let prefs = format!(
+        r#"// Written by tether at every launch; edits here are lost.
+user_pref("network.proxy.type", 1);
+user_pref("network.proxy.socks", "127.0.0.1");
+user_pref("network.proxy.socks_port", {port});
+user_pref("network.proxy.socks_version", 5);
+user_pref("network.proxy.socks_remote_dns", true);
+user_pref("network.proxy.socks5_remote_dns", true);
+user_pref("network.proxy.no_proxies_on", "");
+// Without this Firefox never proxies localhost, which would stay the laptop's.
+user_pref("network.proxy.allow_hijacking_localhost", true);
+user_pref("browser.shell.checkDefaultBrowser", false);
+"#
+    );
+    let path = profile.join("user.js");
+    std::fs::write(&path, prefs).with_context(|| format!("could not write {}", path.display()))
+}
+
+/// The configured browser, else the first Chromium-family one installed,
+/// else Firefox.
 fn find(configured: Option<&str>) -> Result<PathBuf> {
     if let Some(browser) = configured {
         return which(browser)
@@ -77,8 +125,9 @@ fn find(configured: Option<&str>) -> Result<PathBuf> {
                 .map(PathBuf::from)
                 .find(|path| path.is_file())
         })
+        .or_else(|| FIREFOX.iter().find_map(|name| which(name)))
         .context(
-            "no Chromium-family browser found; install Chromium or Chrome, or set browser in ~/.config/tether/config.toml",
+            "no supported browser found; install Chromium, Chrome or Firefox, or set browser in ~/.config/tether/config.toml",
         )
 }
 

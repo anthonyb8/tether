@@ -1,0 +1,18 @@
+# Keeps tether connect running for this user on a Linux laptop.
+#   install -Dm644 tether-connect.service ~/.config/systemd/user/tether-connect.service
+#   systemctl --user enable --now tether-connect
+# Logs: journalctl --user -u tether-connect
+[Unit]
+Description=tether: connect this laptop to the server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/tether connect
+# connect reconnects on its own; this restarts it only if it exits, such as
+# when its proxy port is taken.
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
