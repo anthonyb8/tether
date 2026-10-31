@@ -12,13 +12,23 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Share a local port with your tailnet over HTTPS and print its address
-    Share,
+    Share {
+        /// The local port a dev server listens on
+        #[arg(value_parser = port)]
+        port: u16,
+    },
     /// Stop sharing a port
-    Unshare,
+    Unshare {
+        #[arg(value_parser = port)]
+        port: u16,
+    },
     /// List the ports being shared
     Shares,
-    /// Print the HTTPS address a shared port is reached at
-    Origin,
+    /// Print the HTTPS address a port is reached at once shared, for start scripts
+    Origin {
+        #[arg(value_parser = port)]
+        port: u16,
+    },
     /// Connect this laptop to the server and serve its requests
     Connect,
     /// Carry requests from the server to the connected laptop (started by connect)
@@ -37,10 +47,10 @@ impl Command {
     /// The name the user typed for this subcommand.
     pub fn name(&self) -> &'static str {
         match self {
-            Command::Share => "share",
-            Command::Unshare => "unshare",
+            Command::Share { .. } => "share",
+            Command::Unshare { .. } => "unshare",
             Command::Shares => "shares",
-            Command::Origin => "origin",
+            Command::Origin { .. } => "origin",
             Command::Connect => "connect",
             Command::Relay => "relay",
             Command::Open => "open",
@@ -48,6 +58,14 @@ impl Command {
             Command::Status => "status",
             Command::Browser => "browser",
         }
+    }
+}
+
+/// A TCP port to share: 1 to 65535.
+fn port(arg: &str) -> Result<u16, String> {
+    match arg.parse::<u16>() {
+        Ok(0) | Err(_) => Err(format!("{arg} is not a port (1 to 65535)")),
+        Ok(port) => Ok(port),
     }
 }
 
@@ -60,12 +78,31 @@ mod tests {
         "browser",
     ];
 
+    /// The arguments each subcommand needs to parse.
+    fn args(name: &str) -> Vec<&str> {
+        match name {
+            "share" | "unshare" | "origin" => vec!["tether", name, "5173"],
+            _ => vec!["tether", name],
+        }
+    }
+
     #[test]
     fn every_subcommand_parses_and_reports_its_own_name() {
         for name in SUBCOMMANDS {
-            let cli = Cli::try_parse_from(["tether", name]).unwrap();
+            let cli = Cli::try_parse_from(args(name)).unwrap();
             assert_eq!(cli.command.name(), name);
         }
+    }
+
+    #[test]
+    fn a_port_must_be_1_to_65535() {
+        for bad in ["0", "65536", "-1", "http"] {
+            assert!(
+                Cli::try_parse_from(["tether", "share", bad]).is_err(),
+                "{bad} was accepted"
+            );
+        }
+        assert!(Cli::try_parse_from(["tether", "share", "65535"]).is_ok());
     }
 
     #[test]
