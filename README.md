@@ -94,6 +94,42 @@ The phone needs only the Tailscale app, signed in to the same tailnet.
 `share` runs `tailscale serve`, so the port is reachable from your tailnet and never the public internet.
 Once per tailnet, turn on MagicDNS and HTTPS Certificates at https://login.tailscale.com/admin/dns; the first `share` on a tailnet without Serve prints the link to enable it and waits.
 
+## Make an app work on the phone
+
+An app opened on the phone is at `https://<host>.<tailnet>.ts.net:<port>`, not `localhost`.
+Anything the app bakes `localhost` into breaks there: its API URL, its auth redirects, a dev server's list of allowed hosts.
+No tool can fix that from outside, so each app takes a small, one-time change, the same shape in every stack.
+
+**First, call the API on a relative path.**
+When the page calls `/api/...` and the dev server proxies that to the backend, one origin serves everything, and most of the rest below goes away.
+Share only the dev server's port.
+
+**Then allow the tailnet address.**
+`tether origin <port>` prints it, so a start script can pass it in rather than hard-coding a tailnet name.
+The usual settings, by stack:
+
+| Stack | Setting |
+|---|---|
+| Vite | `server.allowedHosts: ['.ts.net']`, and `server.proxy: { '/api': 'http://localhost:8000' }` for the relative API path |
+| Next.js | `allowedDevOrigins: ['*.ts.net']` in `next.config.js`, and `rewrites()` from `/api/:path*` to the backend |
+| Supabase | the app's origin in `additional_redirect_urls` under `[auth]` in `supabase/config.toml`, so sign-in redirects back to it; reach the API through the dev server's proxy, or `tether share 54321` and point the client at `tether origin 54321` |
+| Rails | `config.hosts << ".ts.net"` in `config/environments/development.rb` |
+| Django | `".ts.net"` in `ALLOWED_HOSTS`, and the app's origin from `tether origin` in `CSRF_TRUSTED_ORIGINS` |
+
+Check them against your framework's version: these settings move between releases.
+
+## Wire it into other tools
+
+tether needs no plugin anywhere; it plugs in through plain commands.
+
+- **`$BROWSER`.** On the server, `export BROWSER="tether open"` makes a tool that honours `$BROWSER` and splits it into words, as `gh` does, open its page on the laptop.
+  For a tool that takes `$BROWSER` as a single program, point it at a two-line script that runs `exec tether open "$@"`.
+  When no laptop is connected, `tether open` exits 1 with `tether: no browser connected`, so a tool that checks the exit status can print the URL instead.
+- **Scripts and agents.** `tether open "$url" || echo "$url"` opens a page where you are, or falls back to printing it; `tether notify "done"` says a long task finished.
+- **harness.** `harness stack up` prints the app's URL; with `tether browser` on the laptop it opens as printed, since `localhost` there is the server's.
+  tether replaces harness's `devproxy`, with the same default host and port, so `tether browser` works where `devproxy browser` did.
+- **treetop.** treetop's `o` opens a tree's port in the desktop's browser, or copies the URL to the clipboard over SSH; with `tether browser` open on the laptop, that copied `localhost` URL loads as printed.
+
 ## Release
 
 Bump `version` in `Cargo.toml`, then push a matching tag:
