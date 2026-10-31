@@ -1,4 +1,6 @@
 mod cli;
+mod config;
+mod connect;
 mod share;
 mod tailscale;
 
@@ -18,6 +20,7 @@ fn main() -> ExitCode {
         Command::Unshare { port } => share::unshare(port),
         Command::Shares => share::shares(),
         Command::Origin { port } => share::origin(port),
+        Command::Connect { host } => connect::connect(host),
         command => {
             eprintln!("tether: {} is not built yet", command.name());
             return ExitCode::from(NOT_BUILT);

@@ -30,7 +30,10 @@ pub enum Command {
         port: u16,
     },
     /// Connect this laptop to the server and serve its requests
-    Connect,
+    Connect {
+        /// The server's SSH host (default: TETHER_HOST, the config file, else "server")
+        host: Option<String>,
+    },
     /// Carry requests from the server to the connected laptop (started by connect)
     Relay,
     /// Open a URL in the connected laptop's browser
@@ -51,7 +54,7 @@ impl Command {
             Command::Unshare { .. } => "unshare",
             Command::Shares => "shares",
             Command::Origin { .. } => "origin",
-            Command::Connect => "connect",
+            Command::Connect { .. } => "connect",
             Command::Relay => "relay",
             Command::Open => "open",
             Command::Notify => "notify",
