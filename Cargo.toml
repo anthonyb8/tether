@@ -1,6 +1,6 @@
 [package]
 name = "tether"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 description = "Your laptop and phone, tethered to the box your code runs on"
 

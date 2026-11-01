@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
+use crate::config;
 use crate::protocol::{Ack, Envelope, Request, check_url};
 
 /// How long the relay waits for the laptop to act on a request.
@@ -29,20 +30,9 @@ const RECLAIM_EVERY: Duration = Duration::from_secs(1);
 /// How long a command waits for the relay, a little over the laptop's budget.
 const RELAY_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// `$XDG_RUNTIME_DIR/tether.sock`; without that variable, which a session
-/// started outside PAM lacks, the same `/run/user/<uid>` it would name, so
-/// the relay and the commands agree; failing that `~/.cache/tether/tether.sock`.
+/// `tether.sock` in tether's runtime directory.
 pub fn socket_path() -> Result<PathBuf> {
-    if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()) {
-        return Ok(PathBuf::from(dir).join("tether.sock"));
-    }
-    // SAFETY: getuid cannot fail.
-    let run = PathBuf::from(format!("/run/user/{}", unsafe { libc::getuid() }));
-    if run.is_dir() {
-        return Ok(run.join("tether.sock"));
-    }
-    let home = std::env::var_os("HOME").context("HOME is not set")?;
-    Ok(PathBuf::from(home).join(".cache/tether/tether.sock"))
+    Ok(config::runtime_dir()?.join("tether.sock"))
 }
 
 /// Runs the relay until the laptop disconnects, which closes stdin.
@@ -236,18 +226,20 @@ pub fn notify(text: String) -> Result<()> {
     send(Request::Notify { text })
 }
 
+/// `tether status`: on the server, which laptop is connected; on the laptop,
+/// whether it is connected to the server.
 pub fn status() -> Result<()> {
-    let Some(ack) = ask(&Request::Status)? else {
-        bail!("no laptop connected");
-    };
-    let laptop = ack.laptop.unwrap_or_else(|| "a laptop".into());
-    let since = ack.connected_secs.unwrap_or(0);
-    println!("connected: {laptop}, for {}", duration(since));
-    Ok(())
+    if let Some(ack) = ask(&Request::Status)? {
+        let laptop = ack.laptop.unwrap_or_else(|| "a laptop".into());
+        let since = ack.connected_secs.unwrap_or(0);
+        println!("connected: {laptop}, for {}", duration(since));
+        return Ok(());
+    }
+    crate::state::status()
 }
 
 /// A short human duration: "45s", "12m", "3h 5m", "2d 4h".
-fn duration(secs: u64) -> String {
+pub fn duration(secs: u64) -> String {
     let (d, h, m) = (secs / 86_400, secs / 3_600 % 24, secs / 60 % 60);
     match (d, h, m) {
         (0, 0, 0) => format!("{secs}s"),

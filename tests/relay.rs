@@ -155,7 +155,11 @@ fn with_no_laptop_open_and_status_exit_1_so_callers_fall_back() {
 
     let out = run(&sandbox, &["status"]);
     assert_eq!(out.status.code(), Some(1));
-    assert_eq!(stderr(&out), "tether: no laptop connected\n");
+    assert!(
+        stderr(&out).starts_with("tether: no laptop connected"),
+        "{}",
+        stderr(&out)
+    );
 }
 
 #[test]

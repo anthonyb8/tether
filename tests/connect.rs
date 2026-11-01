@@ -6,7 +6,7 @@ use std::net::TcpListener;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use common::{Sandbox, stderr};
+use common::{Sandbox, stderr, stdout};
 
 fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
@@ -296,4 +296,128 @@ exit 255"#,
         "{prefs}"
     );
     assert_eq!(std::fs::read_to_string(&acks).unwrap(), "{\"id\":1}\n");
+}
+
+/// Runs `tether status` in the sandbox, with the runtime directory a
+/// foreground connect in it uses.
+fn status(sandbox: &Sandbox, port: u16) -> std::process::Output {
+    sandbox
+        .tether(&["status"])
+        .env("TETHER_PORT", port.to_string())
+        .env("XDG_RUNTIME_DIR", sandbox.dir.join("run"))
+        .output()
+        .unwrap()
+}
+
+fn wait_for(done: impl Fn() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !done() {
+        assert!(Instant::now() < deadline, "timed out");
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// An ssh that logs in and opens the proxy, as the real one does, until
+/// killed. Its pid is written to `ssh.pid`.
+fn listening_ssh(sandbox: &Sandbox) {
+    sandbox.fake(
+        "ssh",
+        &format!(
+            r#"echo $$ > '{}'
+port=$(echo "$*" | sed -n 's/.*-D 127.0.0.1:\([0-9]*\).*/\1/p')
+exec python3 -c "import socket,time; s=socket.socket(); s.bind(('127.0.0.1', $port)); s.listen(); time.sleep(30)""#,
+            sandbox.dir.join("ssh.pid").display()
+        ),
+    );
+}
+
+fn alive(pid: &str) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", pid.trim()])
+        .status()
+        .unwrap()
+        .success()
+}
+
+#[test]
+fn status_on_the_laptop_shows_the_connection() {
+    let sandbox = Sandbox::new("connect-status");
+    std::fs::create_dir_all(sandbox.dir.join("run")).unwrap();
+    listening_ssh(&sandbox);
+    let port = free_port();
+
+    let out = status(&sandbox, port);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        stderr(&out).contains("this machine is not connected to a server"),
+        "{}",
+        stderr(&out)
+    );
+
+    let mut child = sandbox
+        .tether(&["connect", "--foreground", "devbox"])
+        .env("TETHER_PORT", port.to_string())
+        .env("XDG_RUNTIME_DIR", sandbox.dir.join("run"))
+        .env_remove("INVOCATION_ID")
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_for(|| status(&sandbox, port).status.success());
+    let out = status(&sandbox, port);
+    assert!(
+        stdout(&out)
+            .starts_with("connected to devbox, in a terminal (tether connect --foreground), for "),
+        "{}",
+        stdout(&out)
+    );
+
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let ssh = std::fs::read_to_string(sandbox.dir.join("ssh.pid")).unwrap();
+    let _ = std::process::Command::new("kill").arg(ssh.trim()).status();
+}
+
+#[test]
+fn status_on_the_laptop_names_a_port_held_by_something_else() {
+    let sandbox = Sandbox::new("connect-status-other");
+    std::fs::create_dir_all(sandbox.dir.join("run")).unwrap();
+    let held = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = held.local_addr().unwrap().port();
+    let out = status(&sandbox, port);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        stderr(&out).contains(&format!("something else holds 127.0.0.1:{port}")),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn stopping_connect_stops_its_ssh() {
+    let sandbox = Sandbox::new("connect-stops-ssh");
+    std::fs::create_dir_all(sandbox.dir.join("run")).unwrap();
+    listening_ssh(&sandbox);
+    let port = free_port();
+    let mut child = sandbox
+        .tether(&["connect", "--foreground"])
+        .env("TETHER_PORT", port.to_string())
+        .env("XDG_RUNTIME_DIR", sandbox.dir.join("run"))
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_for(|| sandbox.dir.join("ssh.pid").exists());
+    let ssh = std::fs::read_to_string(sandbox.dir.join("ssh.pid")).unwrap();
+    wait_for(|| TcpListener::bind(("127.0.0.1", port)).is_err());
+
+    // As `kill` or a closed terminal would, without reaching ssh directly.
+    std::process::Command::new("kill")
+        .arg(child.id().to_string())
+        .status()
+        .unwrap();
+    child.wait().unwrap();
+    wait_for(|| !alive(&ssh));
+    assert!(
+        TcpListener::bind(("127.0.0.1", port)).is_ok(),
+        "the proxy port is still held"
+    );
 }

@@ -5,7 +5,9 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -14,6 +16,7 @@ use anyhow::{Context, Result, bail};
 use crate::config::Settings;
 use crate::laptop;
 use crate::protocol::Envelope;
+use crate::state::{self, State};
 
 /// A connection that stayed up this long was healthy, so the next drop starts
 /// the backoff from the bottom again.
@@ -23,9 +26,20 @@ const STABLE: Duration = Duration::from_secs(30);
 /// without tether installed.
 const NOT_FOUND: i32 = 127;
 
+/// The running ssh's pid, for the signal handler; 0 between connections.
+static SSH_PID: AtomicI32 = AtomicI32::new(0);
+
 pub fn connect(host: Option<String>) -> Result<()> {
     let settings = Settings::load(host)?;
     let me = laptop::hostname();
+    stop_ssh_with_us();
+    let mut state = State {
+        pid: std::process::id(),
+        host: settings.host.clone(),
+        port: settings.port,
+        background: state::in_background(),
+        connected_since: None,
+    };
     let mut relay = true;
     let mut backoff = Backoff::default();
     loop {
@@ -34,15 +48,12 @@ pub fn connect(host: Option<String>) -> Result<()> {
             "tether: connecting to {}, SOCKS proxy on 127.0.0.1:{}",
             settings.host, settings.port
         );
+        state.connected_since = None;
+        state::write(&state);
         let started = Instant::now();
-        let status = if relay {
-            run_with_relay(&settings, &me)?
-        } else {
-            ssh(&settings, None)
-                .stdin(Stdio::null())
-                .status()
-                .context("could not run ssh; is OpenSSH installed?")?
-        };
+        let status = session(&settings, relay.then_some(me.as_str()), &state)?;
+        state.connected_since = None;
+        state::write(&state);
         if relay && status.code() == Some(NOT_FOUND) {
             // Keep the proxy, which needs nothing on the server, rather than
             // lose it too.
@@ -66,19 +77,62 @@ pub fn connect(host: Option<String>) -> Result<()> {
     }
 }
 
-/// Runs ssh with the relay on the server, acting on each request it sends
-/// until the connection ends.
-fn run_with_relay(settings: &Settings, me: &str) -> Result<std::process::ExitStatus> {
-    // A non-interactive SSH session often lacks the PATH entries install.sh
-    // installs to, so name them.
-    let remote = format!(
-        "sh -c 'PATH=\"$HOME/.local/bin:/usr/local/bin:$PATH\" exec tether relay --from {me}'"
-    );
-    let mut child = ssh(settings, Some(&remote))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
+/// One ssh connection, from start to end. With `relay` (this laptop's
+/// name), the server's relay runs over it and its requests are served.
+fn session(settings: &Settings, relay: Option<&str>, state: &State) -> Result<ExitStatus> {
+    let mut cmd = match relay {
+        // A non-interactive SSH session often lacks the PATH entries
+        // install.sh installs to, so name them.
+        Some(me) => ssh(
+            settings,
+            Some(&format!(
+                "sh -c 'PATH=\"$HOME/.local/bin:/usr/local/bin:$PATH\" exec tether relay --from {me}'"
+            )),
+        ),
+        None => ssh(settings, None),
+    };
+    // The relay talks over ssh's stdin and stdout; without it, ssh needs
+    // neither.
+    if relay.is_some() {
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped());
+    } else {
+        cmd.stdin(Stdio::null());
+    }
+    let mut child = cmd
         .spawn()
         .context("could not run ssh; is OpenSSH installed?")?;
+    SSH_PID.store(child.id() as i32, Ordering::SeqCst);
+
+    // The proxy listening is the sign the connection is up: ssh opens it
+    // only once it has logged in.
+    let ended = Arc::new(AtomicBool::new(false));
+    let watcher = {
+        let ended = Arc::clone(&ended);
+        let mut state = state.clone();
+        thread::spawn(move || {
+            while !ended.load(Ordering::SeqCst) {
+                if proxy_up(state.port) {
+                    state.connected_since = Some(state::now());
+                    state::write(&state);
+                    return;
+                }
+                thread::sleep(Duration::from_millis(250));
+            }
+        })
+    };
+
+    if relay.is_some() {
+        serve(&mut child, settings)?;
+    }
+    let status = child.wait()?;
+    SSH_PID.store(0, Ordering::SeqCst);
+    ended.store(true, Ordering::SeqCst);
+    let _ = watcher.join();
+    Ok(status)
+}
+
+/// Acts on each request the server's relay sends until the connection ends.
+fn serve(child: &mut Child, settings: &Settings) -> Result<()> {
     let mut to_server = child.stdin.take().unwrap();
     let from_server = BufReader::new(child.stdout.take().unwrap());
     for line in from_server.lines() {
@@ -96,8 +150,29 @@ fn run_with_relay(settings: &Settings, me: &str) -> Result<std::process::ExitSta
             break;
         }
     }
-    drop(to_server);
-    Ok(child.wait()?)
+    Ok(())
+}
+
+/// Makes a signal that ends connect (Ctrl-C, a closed terminal, kill, the
+/// service stopping) end its ssh too. Otherwise ssh can outlive it, holding
+/// the proxy port, for as long as the browser keeps connections open.
+fn stop_ssh_with_us() {
+    extern "C" fn on_signal(signal: libc::c_int) {
+        let pid = SSH_PID.load(Ordering::SeqCst);
+        // SAFETY: kill and _exit are async-signal-safe.
+        unsafe {
+            if pid > 0 {
+                libc::kill(pid, libc::SIGTERM);
+            }
+            libc::_exit(128 + signal);
+        }
+    }
+    for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+        // SAFETY: on_signal only calls async-signal-safe functions.
+        unsafe {
+            libc::signal(signal, on_signal as *const () as libc::sighandler_t);
+        }
+    }
 }
 
 /// The ssh that carries the proxy and, given a remote command, the relay.

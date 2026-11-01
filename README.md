@@ -23,11 +23,13 @@ On the laptop:
 tether connect [host]      # connects in the background, now and at every login
 tether connect --stop      # disconnects, and stops connecting at login
 tether connect --foreground [host]   # runs in this terminal instead, until Ctrl-C
+tether status              # connected to server, in the background, for 2h 5m
 ```
 
 `tether connect` sets itself up as a login service, a systemd user unit on Linux or a launchd agent on macOS, starts it, and returns once the connection is up.
 Running it again, say with another host, replaces the service.
 Its messages go to `journalctl --user -u tether-connect` on Linux and `~/Library/Logs/tether-connect.log` on macOS.
+`tether status` on the laptop says whether it is connected, still connecting, or not running, and names anything else holding the proxy port, such as an old `devproxy`.
 
 The connection is one SSH connection to the server carrying a SOCKS proxy on `127.0.0.1:1080`, in which `localhost` is the server's.
 It reconnects on its own after sleep or a dropped network, waiting 1 s and doubling to 30 s between tries.

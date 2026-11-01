@@ -13,7 +13,7 @@ use crate::config::Settings;
 use crate::connect::proxy_up;
 
 const UNIT: &str = "tether-connect.service";
-const LABEL: &str = "dev.tether.connect";
+pub const LABEL: &str = "dev.tether.connect";
 
 /// How long to wait for a freshly started service's proxy to listen.
 const START_TIMEOUT: Duration = Duration::from_secs(15);
@@ -184,7 +184,7 @@ fn log() -> Result<PathBuf> {
     Ok(home()?.join("Library/Logs/tether-connect.log"))
 }
 
-fn logs_hint() -> Result<String> {
+pub fn logs_hint() -> Result<String> {
     Ok(if cfg!(target_os = "macos") {
         log()?.display().to_string()
     } else {

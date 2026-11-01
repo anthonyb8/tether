@@ -8,6 +8,7 @@ mod relay;
 mod service;
 mod share;
 mod spawn;
+mod state;
 mod tailscale;
 
 use std::process::ExitCode;

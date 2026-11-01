@@ -70,6 +70,24 @@ pub fn dir() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join(".config/tether"))
 }
 
+/// Where tether keeps its socket and state for this login:
+/// `$XDG_RUNTIME_DIR`; without that variable, which a session started
+/// outside PAM lacks, the same `/run/user/<uid>` it would name, so every
+/// tether on the machine agrees; failing that, as on macOS,
+/// `~/.cache/tether`.
+pub fn runtime_dir() -> Result<PathBuf> {
+    if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()) {
+        return Ok(PathBuf::from(dir));
+    }
+    // SAFETY: getuid cannot fail.
+    let run = PathBuf::from(format!("/run/user/{}", unsafe { libc::getuid() }));
+    if run.is_dir() {
+        return Ok(run);
+    }
+    let home = std::env::var_os("HOME").context("HOME is not set")?;
+    Ok(PathBuf::from(home).join(".cache/tether"))
+}
+
 fn read_file() -> Result<File> {
     let path = dir()?.join("config.toml");
     match std::fs::read_to_string(&path) {
