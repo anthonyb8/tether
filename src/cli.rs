@@ -29,10 +29,16 @@ pub enum Command {
         #[arg(value_parser = port)]
         port: u16,
     },
-    /// Connect this laptop to the server and serve its requests
+    /// Connect this laptop to the server in the background, from now and at every login
     Connect {
         /// The server's SSH host (default: TETHER_HOST, the config file, else "server")
         host: Option<String>,
+        /// Run in this terminal instead, until Ctrl-C
+        #[arg(long, conflicts_with = "stop")]
+        foreground: bool,
+        /// Disconnect, and stop connecting at login
+        #[arg(long, conflicts_with = "host")]
+        stop: bool,
     },
     /// Carry requests from the server to the connected laptop (started by connect)
     Relay {

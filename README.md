@@ -20,11 +20,20 @@ From source: `cargo install --git https://github.com/anthonyb8/tether`.
 On the laptop:
 
 ```sh
-tether connect [host]
+tether connect [host]      # connects in the background, now and at every login
+tether connect --stop      # disconnects, and stops connecting at login
+tether connect --foreground [host]   # runs in this terminal instead, until Ctrl-C
 ```
 
-It holds one SSH connection to the server carrying a SOCKS proxy on `127.0.0.1:1080`, in which `localhost` is the server's, and reconnects on its own after sleep or a dropped network, waiting 1 s and doubling to 30 s between tries.
-It uses the system `ssh`, so the host is anything your `~/.ssh/config` knows, and needs key or agent authentication since it never prompts.
+`tether connect` sets itself up as a login service, a systemd user unit on Linux or a launchd agent on macOS, starts it, and returns once the connection is up.
+Running it again, say with another host, replaces the service.
+Its messages go to `journalctl --user -u tether-connect` on Linux and `~/Library/Logs/tether-connect.log` on macOS.
+
+The connection is one SSH connection to the server carrying a SOCKS proxy on `127.0.0.1:1080`, in which `localhost` is the server's.
+It reconnects on its own after sleep or a dropped network, waiting 1 s and doubling to 30 s between tries.
+It uses the system `ssh`, so the host is anything your `~/.ssh/config` knows, Tailscale SSH included, and needs key, agent or Tailscale authentication since it never prompts.
+On Linux, `tether connect` passes your session's display and `SSH_AUTH_SOCK` to the service, so it can open browser windows and use your agent.
+If tabs stop opening after you log in again, your desktop is not sharing its display with systemd: have it run `dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPLAY` at startup, as most desktops already do.
 
 For a browser where `localhost` is the server's:
 
@@ -32,7 +41,7 @@ For a browser where `localhost` is the server's:
 tether browser [host]
 ```
 
-It starts `tether connect` in the background if it is not already running, logging to `~/.cache/tether/connect.log`, and opens a Chromium-family browser (Chromium, Chrome, Brave or Edge) with its own profile in `~/.config/tether/chromium`, or Firefox with its own profile in `~/.config/tether/firefox` when no Chromium-family browser is installed or `browser` names Firefox.
+It runs `tether connect` first if nothing is connected, and opens a Chromium-family browser (Chromium, Chrome, Brave or Edge) with its own profile in `~/.config/tether/chromium`, or Firefox with its own profile in `~/.config/tether/firefox` when no Chromium-family browser is installed or `browser` names Firefox.
 In that profile every request goes through the proxy, `localhost` included, so every dev server, an API the page calls on `127.0.0.1` and OAuth callbacks to `localhost` work unchanged; the rest of the browser is untouched.
 `tether open` on the server opens its URL as a new tab in that profile.
 
@@ -43,27 +52,6 @@ Each setting comes from the command line, then the environment, then `~/.config/
 | SSH host of the server | `TETHER_HOST` | `host` | `server` |
 | Local SOCKS port | `TETHER_PORT` | `port` | `1080` |
 | Browser, a command or path | | `browser` | the first Chromium-family browser found, else Firefox |
-
-### Keep it running
-
-To have `connect` start at login and stay up, install the user service from `service/`.
-
-On Linux, with systemd:
-
-```sh
-install -Dm644 service/tether-connect.service ~/.config/systemd/user/tether-connect.service
-systemctl --user enable --now tether-connect
-```
-
-On macOS:
-
-```sh
-cp service/dev.tether.connect.plist ~/Library/LaunchAgents/
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.tether.connect.plist
-```
-
-Both run `~/.local/bin/tether connect`, where `install.sh` puts it, and read the host from `~/.config/tether/config.toml`.
-A systemd user service does not see an `ssh-agent` started by your shell, so on Linux use a key without a passphrase for the server, or an agent the session exports to systemd (`systemctl --user import-environment SSH_AUTH_SOCK`).
 
 ## Open tabs on the laptop from the server
 

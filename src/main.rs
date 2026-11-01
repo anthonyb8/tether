@@ -5,6 +5,7 @@ mod connect;
 mod laptop;
 mod protocol;
 mod relay;
+mod service;
 mod share;
 mod spawn;
 mod tailscale;
@@ -22,7 +23,13 @@ fn main() -> ExitCode {
         Command::Unshare { port } => share::unshare(port),
         Command::Shares => share::shares(),
         Command::Origin { port } => share::origin(port),
-        Command::Connect { host } => connect::connect(host),
+        Command::Connect { stop: true, .. } => service::stop(),
+        Command::Connect {
+            host,
+            foreground: true,
+            ..
+        } => connect::connect(host),
+        Command::Connect { host, .. } => service::start(host),
         Command::Relay { from } => relay::relay(from),
         Command::Open { url } => relay::open(url),
         Command::Status => relay::status(),

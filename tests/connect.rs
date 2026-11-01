@@ -23,7 +23,7 @@ fn connect_runs_the_socks_proxy_and_reconnects_when_it_drops() {
     sandbox.fake("ssh", "exit 255");
     let port = free_port().to_string();
     let mut child = sandbox
-        .tether(&["connect", "devbox"])
+        .tether(&["connect", "--foreground", "devbox"])
         .env("TETHER_PORT", &port)
         .spawn()
         .unwrap();
@@ -54,7 +54,7 @@ fn connect_refuses_a_proxy_port_already_in_use() {
     let port = held.local_addr().unwrap().port().to_string();
 
     let out = sandbox
-        .tether(&["connect"])
+        .tether(&["connect", "--foreground"])
         .env("TETHER_PORT", &port)
         .output()
         .unwrap();
@@ -78,7 +78,10 @@ fn connect_takes_the_host_from_the_config_file() {
         ".config/tether/config.toml",
         &format!("host = \"from-config\"\nport = {port}\n"),
     );
-    let mut child = sandbox.tether(&["connect"]).spawn().unwrap();
+    let mut child = sandbox
+        .tether(&["connect", "--foreground"])
+        .spawn()
+        .unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     while sandbox.calls("ssh").is_empty() && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(50));
@@ -109,7 +112,7 @@ exit 255"#,
     sandbox.fake("chromium", "");
     let port = free_port();
     let mut child = sandbox
-        .tether(&["connect"])
+        .tether(&["connect", "--foreground"])
         .env("TETHER_PORT", port.to_string())
         .spawn()
         .unwrap();
@@ -151,7 +154,7 @@ fn connect_keeps_the_proxy_when_the_server_has_no_tether() {
         r#"case "$*" in *"tether relay"*) exit 127 ;; *) exit 255 ;; esac"#,
     );
     let mut child = sandbox
-        .tether(&["connect"])
+        .tether(&["connect", "--foreground"])
         .env("TETHER_PORT", free_port().to_string())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -178,6 +181,8 @@ fn connect_keeps_the_proxy_when_the_server_has_no_tether() {
 fn browser_opens_the_profile_through_a_running_connect() {
     let sandbox = Sandbox::new("browser-running");
     sandbox.fake("ssh", "exit 255");
+    sandbox.fake("systemctl", "exit 1");
+    sandbox.fake("launchctl", "exit 1");
     sandbox.fake("chromium", "");
     // A connect already holding the proxy port.
     let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -190,12 +195,10 @@ fn browser_opens_the_profile_through_a_running_connect() {
         .unwrap();
 
     assert!(out.status.success(), "{}", stderr(&out));
-    // Not that ssh went unrun: a second connect would stop at the busy port
-    // before running it, so only browser's own report tells.
+    let manager = sandbox.calls("systemctl") + &sandbox.calls("launchctl");
     assert!(
-        !stderr(&out).contains("started tether connect"),
-        "started a second connect: {}",
-        stderr(&out)
+        !manager.contains("restart") && !manager.contains("bootstrap"),
+        "started the background connect: {manager}"
     );
     let deadline = Instant::now() + Duration::from_secs(5);
     while sandbox.calls("chromium").is_empty() && Instant::now() < deadline {
@@ -206,52 +209,6 @@ fn browser_opens_the_profile_through_a_running_connect() {
         launched.contains(&format!("--proxy-server=socks5://127.0.0.1:{port}")),
         "{launched}"
     );
-}
-
-#[test]
-fn browser_starts_connect_in_the_background_when_it_is_not_running() {
-    let sandbox = Sandbox::new("browser-cold");
-    sandbox.fake("chromium", "");
-    let pids = sandbox.dir.join("pids");
-    // An ssh that brings the SOCKS port up as the real one would, recording
-    // its own pid and its parent's (the background connect) for cleanup.
-    sandbox.fake(
-        "ssh",
-        &format!(
-            r#"echo "$$ $PPID" > '{}'
-port=$(echo "$*" | sed -n 's/.*-D 127.0.0.1:\([0-9]*\).*/\1/p')
-exec python3 -c "import socket,time; s=socket.socket(); s.bind(('127.0.0.1', $port)); s.listen(); time.sleep(30)""#,
-            pids.display()
-        ),
-    );
-    let port = free_port();
-
-    let out = sandbox
-        .tether(&["browser", "devbox"])
-        .env("TETHER_PORT", port.to_string())
-        .output()
-        .unwrap();
-
-    let started = std::fs::read_to_string(&pids).unwrap_or_default();
-    for pid in started.split_whitespace() {
-        let _ = std::process::Command::new("kill").arg(pid).status();
-    }
-    assert!(out.status.success(), "{}", stderr(&out));
-    assert!(
-        stderr(&out).contains("started tether connect in the background"),
-        "{}",
-        stderr(&out)
-    );
-    assert!(
-        sandbox.calls("ssh").contains(" devbox "),
-        "{}",
-        sandbox.calls("ssh")
-    );
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while sandbox.calls("chromium").is_empty() && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(50));
-    }
-    assert!(!sandbox.calls("chromium").is_empty(), "browser not opened");
 }
 
 #[test]
@@ -270,7 +227,7 @@ exit 255"#,
     sandbox.fake("notify-send", "");
     sandbox.fake("osascript", "");
     let mut child = sandbox
-        .tether(&["connect"])
+        .tether(&["connect", "--foreground"])
         .env("TETHER_PORT", free_port().to_string())
         .spawn()
         .unwrap();
@@ -308,7 +265,7 @@ exit 255"#,
     sandbox.write(".config/tether/config.toml", "browser = \"firefox\"\n");
     let port = free_port();
     let mut child = sandbox
-        .tether(&["connect"])
+        .tether(&["connect", "--foreground"])
         .env("TETHER_PORT", port.to_string())
         .spawn()
         .unwrap();

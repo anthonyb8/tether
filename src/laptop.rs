@@ -43,13 +43,16 @@ fn notify(text: &str) -> Result<(), String> {
         cmd.args(["--app-name=tether", "tether", text]);
         ("notify-send", cmd)
     };
-    let out = cmd.stdin(Stdio::null()).output().map_err(|err| {
-        if err.kind() == std::io::ErrorKind::NotFound {
-            format!("{program} is not installed on the laptop")
-        } else {
-            format!("could not run {program}: {err}")
-        }
-    })?;
+    let out = crate::service::desktop_env(&mut cmd)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|err| {
+            if err.kind() == std::io::ErrorKind::NotFound {
+                format!("{program} is not installed on the laptop")
+            } else {
+                format!("could not run {program}: {err}")
+            }
+        })?;
     if !out.status.success() {
         let reason = String::from_utf8_lossy(&out.stderr);
         return Err(format!("{program} failed: {}", reason.trim()));

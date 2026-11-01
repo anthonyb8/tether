@@ -5,9 +5,10 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 
 use crate::config::{self, Settings};
+use crate::service::desktop_env;
 use crate::spawn::detached;
 
 /// Chromium-family browsers by command name, in order of preference.
@@ -57,7 +58,7 @@ pub fn launch(settings: &Settings, url: Option<&str>) -> Result<()> {
             cmd.arg(url);
         }
     }
-    detached(&mut cmd)
+    detached(desktop_env(&mut cmd))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -147,50 +148,7 @@ fn which(name: &str) -> Option<PathBuf> {
 pub fn browser(host: Option<String>) -> Result<()> {
     let settings = Settings::load(host.clone())?;
     if !crate::connect::proxy_up(settings.port) {
-        start_connect(host, settings.port)?;
+        crate::service::start(host)?;
     }
     launch(&settings, None)
-}
-
-fn start_connect(host: Option<String>, port: u16) -> Result<()> {
-    let log_path = log_path()?;
-    let log = std::fs::File::create(&log_path)
-        .with_context(|| format!("could not write {}", log_path.display()))?;
-    let mut cmd = Command::new(std::env::current_exe()?);
-    cmd.arg("connect").args(host);
-    let mut child = detached(&mut cmd)
-        .stdin(Stdio::null())
-        .stdout(log.try_clone()?)
-        .stderr(log)
-        .spawn()
-        .context("could not start tether connect")?;
-    eprintln!(
-        "tether: started tether connect in the background, logging to {}",
-        log_path.display()
-    );
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-    while std::time::Instant::now() < deadline {
-        if crate::connect::proxy_up(port) {
-            return Ok(());
-        }
-        if let Some(status) = child.try_wait()? {
-            bail!(
-                "tether connect exited ({status}); see {}",
-                log_path.display()
-            );
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-    bail!(
-        "the proxy did not come up within 15 seconds; see {}",
-        log_path.display()
-    )
-}
-
-/// Where a background `connect` logs: `~/.cache/tether/connect.log`.
-fn log_path() -> Result<PathBuf> {
-    let home = std::env::var_os("HOME").context("HOME is not set")?;
-    let dir = PathBuf::from(home).join(".cache/tether");
-    std::fs::create_dir_all(&dir)?;
-    Ok(dir.join("connect.log"))
 }
