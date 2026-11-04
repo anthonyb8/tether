@@ -16,8 +16,12 @@ pub enum Command {
         /// The local port a dev server listens on
         #[arg(value_parser = port)]
         port: u16,
+        /// Put it on the internet with Tailscale Funnel, on the first free of
+        /// HTTPS ports 443, 8443 and 10000
+        #[arg(long)]
+        public: bool,
     },
-    /// Stop sharing a port
+    /// Stop sharing a port, with the tailnet and publicly
     Unshare {
         #[arg(value_parser = port)]
         port: u16,
