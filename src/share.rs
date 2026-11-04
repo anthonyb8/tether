@@ -1,5 +1,5 @@
 //! `share`, `unshare`, `shares` and `origin`: reaching a dev server from the
-//! phone over the tailnet.
+//! phone over the tailnet, or from anywhere with `share --public`.
 
 use std::io::{self, IsTerminal};
 
@@ -9,10 +9,15 @@ use qrcode::render::unicode::Dense1x2;
 
 use crate::tailscale;
 
-pub fn share(port: u16) -> Result<()> {
+pub fn share(port: u16, public: bool) -> Result<()> {
     let host = tailscale::host()?;
-    tailscale::serve(port)?;
-    let origin = tailscale::origin(&host, port);
+    let listen = if public {
+        tailscale::funnel(port)?
+    } else {
+        tailscale::serve(port)?;
+        port
+    };
+    let origin = tailscale::origin(&host, listen);
     println!("{origin}");
     // A QR code is for a person to scan; a script piping the output wants the
     // address alone.
@@ -32,7 +37,8 @@ pub fn shares() -> Result<()> {
         eprintln!("No ports are shared.");
     }
     for share in shares {
-        println!("{} -> {}", share.origin, share.target);
+        let public = if share.public { " (public)" } else { "" };
+        println!("{} -> {}{public}", share.origin, share.target);
     }
     Ok(())
 }

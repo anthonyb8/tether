@@ -20,7 +20,7 @@ use cli::{Cli, Command};
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
-        Command::Share { port } => share::share(port),
+        Command::Share { port, public } => share::share(port, public),
         Command::Unshare { port } => share::unshare(port),
         Command::Shares => share::shares(),
         Command::Origin { port } => share::origin(port),

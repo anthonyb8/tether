@@ -85,6 +85,18 @@ The phone needs only the Tailscale app, signed in to the same tailnet.
 `share` runs `tailscale serve`, so the port is reachable from your tailnet and never the public internet.
 Once per tailnet, turn on MagicDNS and HTTPS Certificates at https://login.tailscale.com/admin/dns; the first `share` on a tailnet without Serve prints the link to enable it and waits.
 
+### Share a port with the internet
+
+```sh
+tether share --public 5173   # prints https://<host>.<tailnet>.ts.net, :8443 or :10000
+```
+
+`share --public` runs `tailscale funnel`, so anyone with the address can reach the port, with no Tailscale app.
+Funnel listens only on HTTPS ports 443, 8443 and 10000, so the address takes the first of them nothing else listens on, and `share --public` fails when all three are taken.
+`tether shares` marks public shares with `(public)`, and `tether unshare 5173` stops the public share as well as the tailnet one.
+tether never resets the Serve or Funnel config, so shares made by hand or by other tools stay as they are.
+Funnel must be allowed in the tailnet policy; when it is not, `share --public` prints Tailscale's link to enable it.
+
 ## Make an app work on the phone
 
 An app opened on the phone is at `https://<host>.<tailnet>.ts.net:<port>`, not `localhost`.
